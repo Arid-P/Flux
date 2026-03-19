@@ -1,0 +1,48 @@
+﻿Analyzing fluxdone...                                           
+
+   info - 'background' is deprecated and shouldn't be used. Use surface instead. This feature was deprecated after v3.18.0-0.1.pre - lib\core\theme\app_theme.dart:16:9 - deprecated_member_use
+   info - 'background' is deprecated and shouldn't be used. Use surface instead. This feature was deprecated after v3.18.0-0.1.pre - lib\core\theme\app_theme.dart:43:9 - deprecated_member_use
+   info - 'red' is deprecated and shouldn't be used. Use (*.r * 255.0).round().clamp(0, 255) - lib\core\utils\hex_color.dart:11:21 - deprecated_member_use
+   info - 'green' is deprecated and shouldn't be used. Use (*.g * 255.0).round().clamp(0, 255) - lib\core\utils\hex_color.dart:12:21 - deprecated_member_use
+   info - 'blue' is deprecated and shouldn't be used. Use (*.b * 255.0).round().clamp(0, 255) - lib\core\utils\hex_color.dart:13:21 - deprecated_member_use
+warning - Unused import: '../../tasks/domain/entities.dart' - lib\features\calendar\presentation\calendar_screen.dart:5:8 - unused_import
+   info - 'MaterialStatePropertyAll' is deprecated and shouldn't be used. Use WidgetStatePropertyAll instead. Moved to the Widgets layer to make code available outside of Material. This feature was deprecated after v3.19.0-0.3.pre - lib\features\calendar\presentation\calendar_screen.dart:65:28 - deprecated_member_use
+warning - The value of the local variable 'daysToShow' isn't used - lib\features\calendar\presentation\calendar_screen.dart:100:11 - unused_local_variable
+   info - 'withOpacity' is deprecated and shouldn't be used. Use .withValues() to avoid precision loss - lib\features\calendar\presentation\calendar_screen.dart:141:52 - deprecated_member_use
+   info - 'withOpacity' is deprecated and shouldn't be used. Use .withValues() to avoid precision loss - lib\features\calendar\presentation\calendar_screen.dart:196:45 - deprecated_member_use
+   info - 'withOpacity' is deprecated and shouldn't be used. Use .withValues() to avoid precision loss - lib\features\calendar\presentation\calendar_screen.dart:229:54 - deprecated_member_use
+   info - 'withOpacity' is deprecated and shouldn't be used. Use .withValues() to avoid precision loss - lib\features\habits\presentation\habits_screen.dart:55:63 - deprecated_member_use
+   info - 'withOpacity' is deprecated and shouldn't be used. Use .withValues() to avoid precision loss - lib\features\habits\presentation\habits_screen.dart:64:57 - deprecated_member_use
+   info - 'withOpacity' is deprecated and shouldn't be used. Use .withValues() to avoid precision loss - lib\features\habits\presentation\habits_screen.dart:189:33 - deprecated_member_use
+warning - Unused import: '../../lists/domain/entities.dart' - lib\features\tasks\presentation\task_creation_sheet.dart:6:8 - unused_import
+   info - 'withOpacity' is deprecated and shouldn't be used. Use .withValues() to avoid precision loss - lib\features\tasks\presentation\task_creation_sheet.dart:243:45 - deprecated_member_use
+   info - 'withOpacity' is deprecated and shouldn't be used. Use .withValues() to avoid precision loss - lib\features\tasks\presentation\task_creation_sheet.dart:244:59 - deprecated_member_use
+   info - 'withOpacity' is deprecated and shouldn't be used. Use .withValues() to avoid precision loss - lib\features\tasks\presentation\task_creation_sheet.dart:258:45 - deprecated_member_use
+   info - 'withOpacity' is deprecated and shouldn't be used. Use .withValues() to avoid precision loss - lib\features\tasks\presentation\task_creation_sheet.dart:259:59 - deprecated_member_use
+   info - 'withOpacity' is deprecated and shouldn't be used. Use .withValues() to avoid precision loss - lib\features\tasks\presentation\task_creation_sheet.dart:273:45 - deprecated_member_use
+   info - 'withOpacity' is deprecated and shouldn't be used. Use .withValues() to avoid precision loss - lib\features\tasks\presentation\task_creation_sheet.dart:274:59 - deprecated_member_use
+   info - 'withOpacity' is deprecated and shouldn't be used. Use .withValues() to avoid precision loss - lib\features\tasks\presentation\task_creation_sheet.dart:295:45 - deprecated_member_use
+   info - 'withOpacity' is deprecated and shouldn't be used. Use .withValues() to avoid precision loss - lib\features\tasks\presentation\task_creation_sheet.dart:296:59 - deprecated_member_use
+   info - 'withOpacity' is deprecated and shouldn't be used. Use .withValues() to avoid precision loss - lib\features\tasks\presentation\task_creation_sheet.dart:421:35 - deprecated_member_use
+warning - Unused import: 'package:flutter_bloc/flutter_bloc.dart' - lib\features\tasks\presentation\task_detail_sheet.dart:2:8 - unused_import
+   info - 'withOpacity' is deprecated and shouldn't be used. Use .withValues() to avoid precision loss - lib\features\tasks\presentation\tasks_screen.dart:88:63 - deprecated_member_use
+   info - 'withOpacity' is deprecated and shouldn't be used. Use .withValues() to avoid precision loss - lib\features\tasks\presentation\tasks_screen.dart:100:55 - deprecated_member_use
+   info - Unnecessary use of multiple underscores - lib\features\tasks\presentation\tasks_screen.dart:109:37 - unnecessary_underscores
+warning - The declaration '_showQuickCreateDialog' isn't referenced - lib\features\tasks\presentation\tasks_screen.dart:129:8 - unused_element
+   info - 'withOpacity' is deprecated and shouldn't be used. Use .withValues() to avoid precision loss - lib\features\tasks\presentation\tasks_screen.dart:256:35 - deprecated_member_use
+   info - 'withOpacity' is deprecated and shouldn't be used. Use .withValues() to avoid precision loss - lib\features\tasks\presentation\tasks_screen.dart:275:48 - deprecated_member_use
+warning - Unused import: '../domain/entities.dart' - lib\features\tasks\presentation\trash_screen.dart:5:8 - unused_import
+   info - 'withOpacity' is deprecated and shouldn't be used. Use .withValues() to avoid precision loss - lib\features\tasks\presentation\trash_screen.dart:61:63 - deprecated_member_use
+  error - The name 'MyApp' isn't a class - test\widget_test.dart:16:35 - creation_with_non_type
+
+..\flutter\bin\flutter.bat : 34 issues found. (ran 
+in 13.1s)
+At line:1 char:1
++ ..\flutter\bin\flutter.bat analyze --no-pub 2>&1 
+| Out-File -Encoding ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (34 is 
+   sues found. (ran in 13.1s):String) [], RemoteE  
+  xception
+    + FullyQualifiedErrorId : NativeCommandError
+ 

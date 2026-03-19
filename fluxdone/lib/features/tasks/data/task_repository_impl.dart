@@ -1,0 +1,242 @@
+import 'package:injectable/injectable.dart';
+import '../../../core/database/database_helper.dart';
+import '../domain/i_task_repository.dart';
+import '../domain/entities.dart';
+
+@LazySingleton(as: ITaskRepository)
+class TaskRepositoryImpl implements ITaskRepository {
+  final DatabaseHelper dbHelper;
+  TaskRepositoryImpl(this.dbHelper);
+
+  // ── Helpers ──────────────────────────────────────────────
+  int _startOfDay(DateTime d) =>
+      DateTime(d.year, d.month, d.day).millisecondsSinceEpoch;
+
+  int _endOfDay(DateTime d) =>
+      DateTime(d.year, d.month, d.day, 23, 59, 59, 999).millisecondsSinceEpoch;
+
+  // ── Core CRUD ───────────────────────────────────────────
+  @override
+  Future<int> createTask(Task task) async {
+    final db = await dbHelper.database;
+    return await db.insert('tasks', task.toMap());
+  }
+
+  @override
+  Future<void> updateTask(Task task) async {
+    final db = await dbHelper.database;
+    final map = task.toMap();
+    map['updated_at'] = DateTime.now().millisecondsSinceEpoch;
+    await db.update('tasks', map, where: 'id = ?', whereArgs: [task.id]);
+  }
+
+  @override
+  Future<Task?> getTaskById(int id) async {
+    final db = await dbHelper.database;
+    final result = await db.query('tasks', where: 'id = ?', whereArgs: [id]);
+    if (result.isEmpty) return null;
+    return Task.fromMap(result.first);
+  }
+
+  @override
+  Future<List<Task>> getTasksByListId(int listId, {bool includeCompleted = false}) async {
+    final db = await dbHelper.database;
+    String where = 'list_id = ? AND is_trashed = 0';
+    if (!includeCompleted) where += ' AND is_completed = 0';
+    final maps = await db.query('tasks', where: where, whereArgs: [listId], orderBy: 'is_pinned DESC, sort_order ASC');
+    return maps.map((m) => Task.fromMap(m)).toList();
+  }
+
+  @override
+  Future<List<Task>> getTasksBySectionId(int sectionId) async {
+    final db = await dbHelper.database;
+    final maps = await db.query('tasks',
+        where: 'section_id = ? AND is_trashed = 0 AND is_completed = 0',
+        whereArgs: [sectionId],
+        orderBy: 'sort_order ASC');
+    return maps.map((m) => Task.fromMap(m)).toList();
+  }
+
+  // ── Smart Lists ─────────────────────────────────────────
+  @override
+  Future<List<Task>> getTasksForToday() async {
+    final db = await dbHelper.database;
+    final now = DateTime.now();
+    final maps = await db.query('tasks',
+        where: 'task_date >= ? AND task_date <= ? AND is_trashed = 0 AND is_completed = 0',
+        whereArgs: [_startOfDay(now), _endOfDay(now)],
+        orderBy: 'start_time ASC, sort_order ASC');
+    return maps.map((m) => Task.fromMap(m)).toList();
+  }
+
+  @override
+  Future<List<Task>> getTasksForTomorrow() async {
+    final db = await dbHelper.database;
+    final tomorrow = DateTime.now().add(const Duration(days: 1));
+    final maps = await db.query('tasks',
+        where: 'task_date >= ? AND task_date <= ? AND is_trashed = 0 AND is_completed = 0',
+        whereArgs: [_startOfDay(tomorrow), _endOfDay(tomorrow)],
+        orderBy: 'start_time ASC, sort_order ASC');
+    return maps.map((m) => Task.fromMap(m)).toList();
+  }
+
+  @override
+  Future<List<Task>> getUpcomingTasks(int days) async {
+    final db = await dbHelper.database;
+    final now = DateTime.now();
+    final end = now.add(Duration(days: days));
+    final maps = await db.query('tasks',
+        where: 'task_date >= ? AND task_date <= ? AND is_trashed = 0 AND is_completed = 0',
+        whereArgs: [_startOfDay(now), _endOfDay(end)],
+        orderBy: 'task_date ASC, start_time ASC');
+    return maps.map((m) => Task.fromMap(m)).toList();
+  }
+
+  @override
+  Future<List<Task>> getAllIncompleteTasks() async {
+    final db = await dbHelper.database;
+    final maps = await db.query('tasks',
+        where: 'is_trashed = 0 AND is_completed = 0',
+        orderBy: 'task_date ASC, sort_order ASC');
+    return maps.map((m) => Task.fromMap(m)).toList();
+  }
+
+  @override
+  Future<List<Task>> getCompletedTasks() async {
+    final db = await dbHelper.database;
+    final maps = await db.query('tasks',
+        where: 'is_completed = 1 AND is_trashed = 0',
+        orderBy: 'completed_at DESC');
+    return maps.map((m) => Task.fromMap(m)).toList();
+  }
+
+  @override
+  Future<List<Task>> getTrashedTasks() async {
+    final db = await dbHelper.database;
+    final maps = await db.query('tasks',
+        where: 'is_trashed = 1',
+        orderBy: 'trashed_at DESC');
+    return maps.map((m) => Task.fromMap(m)).toList();
+  }
+
+  // ── Count ───────────────────────────────────────────────
+  @override
+  Future<int> getIncompleteTaskCountByListId(int listId) async {
+    final db = await dbHelper.database;
+    final result = await db.rawQuery(
+      'SELECT COUNT(*) as cnt FROM tasks WHERE list_id = ? AND is_trashed = 0 AND is_completed = 0',
+      [listId],
+    );
+    return result.first['cnt'] as int;
+  }
+
+  // ── Task State ──────────────────────────────────────────
+  @override
+  Future<void> toggleComplete(int taskId) async {
+    final db = await dbHelper.database;
+    final task = await getTaskById(taskId);
+    if (task == null) return;
+    final now = DateTime.now().millisecondsSinceEpoch;
+    await db.update(
+      'tasks',
+      {
+        'is_completed': task.isCompleted ? 0 : 1,
+        'completed_at': task.isCompleted ? null : now,
+        'updated_at': now,
+      },
+      where: 'id = ?',
+      whereArgs: [taskId],
+    );
+  }
+
+  @override
+  Future<void> softDeleteTask(int taskId) async {
+    final db = await dbHelper.database;
+    final now = DateTime.now().millisecondsSinceEpoch;
+    await db.update(
+      'tasks',
+      {'is_trashed': 1, 'trashed_at': now, 'updated_at': now},
+      where: 'id = ?',
+      whereArgs: [taskId],
+    );
+  }
+
+  @override
+  Future<void> restoreTask(int taskId) async {
+    final db = await dbHelper.database;
+    final now = DateTime.now().millisecondsSinceEpoch;
+    await db.update(
+      'tasks',
+      {'is_trashed': 0, 'trashed_at': null, 'updated_at': now},
+      where: 'id = ?',
+      whereArgs: [taskId],
+    );
+  }
+
+  @override
+  Future<void> permanentlyDeleteTask(int taskId) async {
+    final db = await dbHelper.database;
+    await db.delete('tasks', where: 'id = ?', whereArgs: [taskId]);
+  }
+
+  @override
+  Future<void> emptyTrash() async {
+    final db = await dbHelper.database;
+    await db.delete('tasks', where: 'is_trashed = 1');
+  }
+
+  // ── Subtasks ────────────────────────────────────────────
+  @override
+  Future<int> createSubtask(Subtask subtask) async {
+    final db = await dbHelper.database;
+    return await db.insert('subtasks', subtask.toMap());
+  }
+
+  @override
+  Future<void> updateSubtask(Subtask subtask) async {
+    final db = await dbHelper.database;
+    await db.update('subtasks', subtask.toMap(), where: 'id = ?', whereArgs: [subtask.id]);
+  }
+
+  @override
+  Future<void> deleteSubtask(int subtaskId) async {
+    final db = await dbHelper.database;
+    await db.delete('subtasks', where: 'id = ?', whereArgs: [subtaskId]);
+  }
+
+  @override
+  Future<void> toggleSubtaskComplete(int subtaskId) async {
+    final db = await dbHelper.database;
+    final result = await db.query('subtasks', where: 'id = ?', whereArgs: [subtaskId]);
+    if (result.isEmpty) return;
+    final current = (result.first['is_completed'] as int) == 1;
+    await db.update('subtasks', {'is_completed': current ? 0 : 1}, where: 'id = ?', whereArgs: [subtaskId]);
+  }
+
+  @override
+  Future<List<Subtask>> getSubtasksByTaskId(int taskId) async {
+    final db = await dbHelper.database;
+    final maps = await db.query('subtasks', where: 'task_id = ?', whereArgs: [taskId], orderBy: 'sort_order ASC');
+    return maps.map((m) => Subtask.fromMap(m)).toList();
+  }
+
+  // ── Reminders ───────────────────────────────────────────
+  @override
+  Future<int> createReminder(Reminder reminder) async {
+    final db = await dbHelper.database;
+    return await db.insert('reminders', reminder.toMap());
+  }
+
+  @override
+  Future<void> deleteReminder(int reminderId) async {
+    final db = await dbHelper.database;
+    await db.delete('reminders', where: 'id = ?', whereArgs: [reminderId]);
+  }
+
+  @override
+  Future<List<Reminder>> getRemindersByTaskId(int taskId) async {
+    final db = await dbHelper.database;
+    final maps = await db.query('reminders', where: 'task_id = ?', whereArgs: [taskId], orderBy: 'remind_at ASC');
+    return maps.map((m) => Reminder.fromMap(m)).toList();
+  }
+}

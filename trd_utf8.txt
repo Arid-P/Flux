@@ -1,0 +1,861 @@
+﻿FluxDone
+Technical Requirements Document
+Version 2.0
+March 2026  |  Flux App Family  |  Supersedes TRD v1.0
+
+1. Document Overview
+
+App Name
+FluxDone (FD)
+
+Document Type
+Technical Requirements Document (TRD) v2.0
+
+Supersedes
+TRD v1.0
+
+Companion Document
+FluxDone PRD v2.0
+
+UI References
+ui_SCR-01 through ui_SCR-13, ui_ICONS_icon-system.md (all locked v1.0)
+
+Primary Platform
+Android (API 26 / Android 8.0 minimum)
+
+Target Android SDK
+API 34 (Android 14)
+
+Date
+March 2026
+
+This document defines the full technical architecture, technology stack, database schema (v2), module boundaries, routing, API design, performance requirements, and development checklist for FluxDone v2. It incorporates all changes from the full UI specification phase. All deviations from this document require explicit approval and must be documented.
+2. Changes from TRD v1.0
+2.1 Tech Stack Changes
+Hive removed from tech stack entirely. SQLite (sqflite) is the sole local storage for all relational data. shared_preferences handles lightweight key-value settings.
+flutter_bloc replaces Riverpod as the state management library. All feature modules use BLoC/Cubit pattern.
+injectable added alongside get_it for compile-time dependency injection code generation.
+flutter_slidable added for swipe actions on task cards and trash cards.
+confetti added for habit completion celebration animation.
+2.2 Database Schema Changes
+habits table: two new columns added — target_count (INTEGER NOT NULL DEFAULT 1) and icon_identifier (TEXT NOT NULL DEFAULT 'star').
+habits table: new column reminder_time (INTEGER NULLABLE) for storing reminder time-of-day as Unix ms. Notification scheduling is Phase 2 but column exists from Phase 1.
+tasks table: new column is_pinned (INTEGER NOT NULL DEFAULT 0). Pin UI is Phase 2 but column exists from Phase 1 to avoid a breaking schema migration later.
+folders table: no color_hex column in v1. Explicitly documented. May be added in Phase 2 via migration.
+All timestamps remain as INTEGER (Unix epoch milliseconds, UTC).
+2.3 Architecture Changes
+Folder management (SCR-10) and List management (SCR-11) are not navigation routes. No go_router routes for /folder/manage or /list/manage. All management is inline in the side drawer via AlertDialog and showModalBottomSheet.
+JSON theming architecture: all color values in the widget tree must be sourced from a ThemeTokens class (not hardcoded). This enables Phase 3 JSON theming with no widget rewrites.
+FluxFoxus bridge MethodChannel name: com.fluxfoxus/fd_integration (corrected from v1.0 which referenced FluxFocus).
+2.4 Route Map Changes
+Removed routes: /folder/manage, /list/manage (inline in drawer, not routable).
+Added route: /task/recurrence/custom (custom recurrence screen from SCR-02 recurrence picker).
+Added route: /settings/google/backup (SCR-13 Google Drive Backup, accessed from Settings → Google sub-screen).
+3. System Architecture
+3.1 Architecture Pattern
+FluxDone uses Clean Architecture with a feature-first folder structure and BLoC/Cubit state management. Each feature module is self-contained: its own presentation layer (Widgets, Screens, BLoC/Cubit), domain layer (entities, use cases, repository interfaces), and data layer (repository implementations, DAOs). Cross-module communication uses a shared repository interface layer and a pub/sub event bus via rxdart. No feature module may import another module's internal files.
+
+3.2 Layer Definitions
+
+Layer
+Responsibility
+Presentation
+Flutter Widgets, Screens, BLoC/Cubit state classes. All visual rendering. Communicates with Domain via BLoC events and states.
+Domain
+Business logic, use cases, entity definitions, repository interfaces. Framework-independent. Pure Dart. Does not import Flutter, sqflite, or any external package.
+Data
+Repository implementations, SQLite DAOs, Google Calendar API client, Google Drive API client, MethodChannel wrappers. Implements interfaces from Domain layer.
+Core / Shared
+ThemeTokens, AppRouter (go_router), event bus (rxdart), DI container (get_it), permission handlers, shared_preferences wrappers, date formatters.
+
+3.3 Module Boundaries
+
+Module
+Owns
+Exposes
+tasks
+Task CRUD, subtasks, priority, recurrence, reminders, trash
+TaskCreatedEvent, TaskUpdatedEvent, TaskDeletedEvent (via event bus)
+calendar
+Timeline rendering, view modes, tap-to-create, drag-to-reschedule, Google Calendar overlay
+None — reads tasks via ITaskRepository
+habits
+Habit CRUD, streak logic, completion history, icon/color picker
+None
+lists
+Folder/List/Section CRUD, custom colors, inline drawer management
+ListColorProvider (used by tasks + calendar for color lookup)
+smart_lists
+Today, Tomorrow, Upcoming, All, Completed, Trash query logic
+None — reads via ITaskRepository
+navigation
+AppRouter, AppDrawer, BottomNavBar, LeftNavRail
+AppRouter, NavigationService
+settings
+Theme toggle, Google account, notification config
+ThemeNotifier, ThemeTokens
+backup
+Google Drive DB upload/download, backup scheduling
+BackupService
+fluxfoxus_bridge
+MethodChannel IPC with FluxFoxus (com.fluxfoxus/fd_integration)
+FocusBlockRequest, FDTaskCreationRequest
+
+3.4 Folder Structure
+lib/
+  main.dart                      # App entry point, DI initialization, BLoC observers
+  app.dart                       # MaterialApp, ThemeTokens, AppRouter setup
+  core/
+    theme/
+      theme_tokens.dart          # All color tokens (light + dark). NO hardcoded colors elsewhere.
+      app_theme.dart             # ThemeData construction from ThemeTokens
+    router/
+      app_router.dart            # go_router route definitions (all routes listed in Section 6)
+    events/
+      app_events.dart            # TaskCreatedEvent, TaskUpdatedEvent, TaskDeletedEvent
+    utils/
+      date_formatter.dart        # intl-based date/time formatting
+      hex_color.dart             # #RRGGBB <-> Color conversion
+    permissions/
+      permission_handler.dart    # Notification permission wrappers
+  features/
+    tasks/
+      data/                      # TaskDao, ReminderDao, TaskRepositoryImpl
+      domain/                    # Task, Subtask, Reminder entities; ITaskRepository; use cases
+      presentation/              # TaskListScreen, TaskDetailSheet, TaskCreationSheet, TaskCard
+    calendar/
+      data/                      # GoogleCalendarApiClient, CalendarRepositoryImpl
+      domain/                    # CalendarEvent entity, ICalendarRepository
+      presentation/              # CalendarScreen, TimelineWidget, TaskBlock, GhostBlock
+    habits/
+      data/                      # HabitDao, HabitCompletionDao, HabitRepositoryImpl
+      domain/                    # Habit entity, StreakCalculator, IHabitRepository; use cases
+      presentation/              # HabitTrackerScreen, HabitCard, HabitDetailScreen, HabitCreationSheet
+    lists/
+      data/                      # FolderDao, ListDao, SectionDao, ListRepositoryImpl
+      domain/                    # Folder, TaskList, Section entities, IListRepository
+      presentation/              # AppDrawer, ColorPickerSheet, ListCreationSheet
+    smart_lists/
+      domain/                    # SmartListQueryService
+      presentation/              # SmartListScreen (reuses TaskCard)
+    navigation/
+      presentation/              # BottomNavBar, LeftNavRail
+    settings/
+      data/                      # PreferencesRepository (shared_preferences)
+      presentation/              # SettingsScreen, ThemeSubScreen, GoogleSubScreen, NotificationsSubScreen
+    backup/
+      data/                      # GoogleDriveApiClient, BackupRepositoryImpl
+      presentation/              # BackupScreen (SCR-13)
+    fluxfoxus_bridge/
+      data/                      # MethodChannelService (com.fluxfoxus/fd_integration)
+      domain/                    # FocusBlockRequest, FDTaskCreationRequest
+4. Technology Stack
+
+Category
+Package / Technology
+Rationale & Notes
+UI Framework
+Flutter (Dart)
+Single codebase Android → iOS → Web. Strong widget ecosystem.
+State Management
+flutter_bloc (BLoC/Cubit)
+Clear UI/logic separation. Predictable state. Well-suited for AI-directed code generation.
+Dependency Injection
+get_it + injectable
+Service locator. Compile-time code generation. Explicit module dependencies.
+Local Database
+sqflite
+Relational SQLite. ACID-compliant. Offline-first by nature. Hive removed from v1.
+Key-Value Storage
+shared_preferences
+Theme selection, notification prefs, last backup timestamp, folder expanded states, last calendar view mode.
+Navigation
+go_router
+Declarative routing. Deep-link ready for Phase 2. Nested navigation for drawer + bottom nav.
+Local Notifications
+flutter_local_notifications
+On-device reminder delivery. No network required. Full Android notification channel support.
+Google Sign-In
+google_sign_in
+OAuth 2.0. Required for Calendar and Drive features.
+Google Calendar API
+googleapis (calendar_v3)
+Read-only event fetch for overlay. Silent failure on error.
+Google Drive API
+googleapis (drive_v3)
+DB upload/download for backup. Phase 2 only.
+Date/Time Formatting
+intl
+Locale-aware formatting across all screens.
+Swipe Actions
+flutter_slidable
+Swipe-to-complete and swipe-to-delete on task cards (SCR-01) and trash cards (SCR-12).
+Habit Celebration
+confetti
+Confetti particle animation on habit daily target completion.
+IPC (FF bridge)
+Flutter MethodChannel (platform channel)
+com.fluxfoxus/fd_integration. Sends FocusBlockRequest to FF. Receives createTask calls from FF.
+Event Bus
+rxdart (Subject streams)
+Internal cross-module events: TaskCreatedEvent, TaskUpdatedEvent, TaskDeletedEvent.
+Testing
+flutter_test + mocktail
+Unit tests for domain logic. Widget tests for critical UI flows.
+5. Database Schema v2
+5.1 Schema Design Principles
+All primary keys: INTEGER PRIMARY KEY AUTOINCREMENT (except presets which use TEXT UUID).
+All timestamps: INTEGER (Unix epoch milliseconds, UTC). Application layer converts to local time.
+Booleans: INTEGER (0 = false, 1 = true).
+Nullable fields explicitly marked. Non-nullable fields have NOT NULL constraints.
+Soft deletes on tasks: is_trashed flag + trashed_at timestamp. Hard delete only from Trash purge.
+Recurrence rules: JSON string in a single column (avoids separate recurrence table in Phase 1).
+All foreign keys use ON DELETE CASCADE.
+No Hive boxes — shared_preferences handles all key-value settings.
+
+5.2 Table: folders
+
+Column
+Type
+Constraints
+Description
+id
+INTEGER
+PRIMARY KEY AUTOINCREMENT
+Unique folder identifier
+name
+TEXT
+NOT NULL
+Display name of the folder
+sort_order
+INTEGER
+NOT NULL DEFAULT 0
+User-defined sort position in the side drawer
+created_at
+INTEGER
+NOT NULL
+Creation timestamp (Unix ms, UTC)
+updated_at
+INTEGER
+NOT NULL
+Last modification timestamp (Unix ms, UTC)
+
+Note: folders table has no color_hex column in v1. Folder colors are not supported in Phase 1. Adding color_hex in Phase 2 requires a schema migration (ALTER TABLE folders ADD COLUMN color_hex TEXT).
+
+5.3 Table: task_lists
+
+Column
+Type
+Constraints
+Description
+id
+INTEGER
+PRIMARY KEY AUTOINCREMENT
+Unique list identifier
+folder_id
+INTEGER
+NOT NULL, FK → folders(id) ON DELETE CASCADE
+Parent folder
+name
+TEXT
+NOT NULL
+Display name of the list
+color_hex
+TEXT
+NOT NULL
+6-character hex color without # prefix (e.g., 2E7D32)
+sort_order
+INTEGER
+NOT NULL DEFAULT 0
+User-defined sort position within its folder
+created_at
+INTEGER
+NOT NULL
+Creation timestamp (Unix ms, UTC)
+updated_at
+INTEGER
+NOT NULL
+Last modification timestamp (Unix ms, UTC)
+
+5.4 Table: sections
+
+Column
+Type
+Constraints
+Description
+id
+INTEGER
+PRIMARY KEY AUTOINCREMENT
+Unique section identifier
+list_id
+INTEGER
+NOT NULL, FK → task_lists(id) ON DELETE CASCADE
+Parent list
+name
+TEXT
+NOT NULL
+Display name (e.g., Physics, Chemistry)
+sort_order
+INTEGER
+NOT NULL DEFAULT 0
+Position within the list
+created_at
+INTEGER
+NOT NULL
+Creation timestamp (Unix ms, UTC)
+
+5.5 Table: tasks (v2)
+Changes from TRD v1.0: is_pinned column added.
+
+Column
+Type
+Constraints
+Description
+id
+INTEGER
+PRIMARY KEY AUTOINCREMENT
+Unique task identifier
+list_id
+INTEGER
+NOT NULL, FK → task_lists(id) ON DELETE CASCADE
+Parent list
+section_id
+INTEGER
+NULLABLE, FK → sections(id) ON DELETE SET NULL
+Parent section (optional)
+title
+TEXT
+NOT NULL
+Task title. Cannot be empty.
+description_md
+TEXT
+NULLABLE
+Rich text description as markdown string
+task_date
+INTEGER
+NOT NULL
+Task date (Unix ms, UTC, time zeroed to midnight)
+start_time
+INTEGER
+NULLABLE
+Optional start time (Unix ms, UTC). Required for timeline block rendering.
+end_time
+INTEGER
+NULLABLE
+Optional end time (Unix ms, UTC). Required if start_time set.
+is_completed
+INTEGER
+NOT NULL DEFAULT 0
+1 if completed
+completed_at
+INTEGER
+NULLABLE
+Completion timestamp (Unix ms, UTC)
+is_trashed
+INTEGER
+NOT NULL DEFAULT 0
+1 if in Trash
+trashed_at
+INTEGER
+NULLABLE
+Trash timestamp. Used for 30-day auto-purge.
+is_pinned
+INTEGER
+NOT NULL DEFAULT 0
+1 if pinned. Pin UI is Phase 2 — column exists from Phase 1.
+priority
+INTEGER
+NOT NULL DEFAULT 0
+0=None, 1=Low, 2=Medium, 3=High
+recurrence_rule
+TEXT
+NULLABLE
+JSON string. Schema in Section 5.9.
+recurrence_parent_id
+INTEGER
+NULLABLE, FK → tasks(id) ON DELETE CASCADE
+For instances: references the parent recurring task.
+sort_order
+INTEGER
+NOT NULL DEFAULT 0
+User-defined position within list/section
+created_at
+INTEGER
+NOT NULL
+Creation timestamp (Unix ms, UTC)
+updated_at
+INTEGER
+NOT NULL
+Last modification timestamp (Unix ms, UTC)
+
+5.6 Table: subtasks
+
+Column
+Type
+Constraints
+Description
+id
+INTEGER
+PRIMARY KEY AUTOINCREMENT
+Unique subtask identifier
+task_id
+INTEGER
+NOT NULL, FK → tasks(id) ON DELETE CASCADE
+Parent task
+title
+TEXT
+NOT NULL
+Subtask display text
+is_completed
+INTEGER
+NOT NULL DEFAULT 0
+1 if completed
+sort_order
+INTEGER
+NOT NULL DEFAULT 0
+Position within parent task's subtask list
+created_at
+INTEGER
+NOT NULL
+Creation timestamp (Unix ms, UTC)
+
+5.7 Table: reminders
+
+Column
+Type
+Constraints
+Description
+id
+INTEGER
+PRIMARY KEY AUTOINCREMENT
+Unique reminder identifier
+task_id
+INTEGER
+NOT NULL, FK → tasks(id) ON DELETE CASCADE
+Parent task
+remind_at
+INTEGER
+NOT NULL
+Absolute notification fire time (Unix ms, UTC)
+offset_minutes
+INTEGER
+NULLABLE
+If set, reminder defined as N minutes before task start. Stored for recurrence regeneration.
+notification_id
+INTEGER
+NOT NULL
+Unique ID for flutter_local_notifications cancellation
+
+5.8 Table: habits (v2)
+Changes from TRD v1.0: target_count, icon_identifier, and reminder_time columns added.
+
+Column
+Type
+Constraints
+Description
+id
+INTEGER
+PRIMARY KEY AUTOINCREMENT
+Unique habit identifier
+name
+TEXT
+NOT NULL
+Display name of the habit
+color_hex
+TEXT
+NOT NULL
+6-character hex color without # prefix
+icon_identifier
+TEXT
+NOT NULL DEFAULT 'star'
+NEW in v2. String key mapping to a Material Icon (e.g., 'star', 'fitness_center', 'menu_book'). Full icon map in ui_ICONS spec.
+frequency_rule
+TEXT
+NOT NULL
+JSON string. Schema: {type: 'daily'|'specific_days'|'x_per_week', days: [0..6], times_per_week: N}
+target_count
+INTEGER
+NOT NULL DEFAULT 1
+NEW in v2. Daily completion target (1–99). Habit is 'complete' for the day when completions ≥ target_count.
+reminder_time
+INTEGER
+NULLABLE
+NEW in v2. Time-of-day for habit reminder (Unix ms, time-of-day component only). Notification scheduling is Phase 2.
+current_streak
+INTEGER
+NOT NULL DEFAULT 0
+Consecutive days streak count
+longest_streak
+INTEGER
+NOT NULL DEFAULT 0
+All-time longest streak
+is_active
+INTEGER
+NOT NULL DEFAULT 1
+1 if active, 0 if archived
+created_at
+INTEGER
+NOT NULL
+Creation timestamp (Unix ms, UTC)
+
+5.9 Table: habit_completions
+
+Column
+Type
+Constraints
+Description
+id
+INTEGER
+PRIMARY KEY AUTOINCREMENT
+Unique completion record
+habit_id
+INTEGER
+NOT NULL, FK → habits(id) ON DELETE CASCADE
+Parent habit
+completed_date
+INTEGER
+NOT NULL
+Date of completion (Unix ms, UTC, time zeroed). UNIQUE per habit_id+date pair.
+completion_count
+INTEGER
+NOT NULL DEFAULT 1
+Number of times completed on this date (supports target_count > 1).
+
+5.10 Recurrence Rule JSON Schema
+The recurrence_rule column in the tasks table stores a JSON string. All valid structures:
+
+{ "type": "daily" }
+{ "type": "weekly", "days": [1, 3, 5] }              // 0=Sun, 1=Mon, ... 6=Sat
+{ "type": "monthly_date", "day": 15 }                // Every 15th of month
+{ "type": "monthly_weekday", "week": 2, "day": 1 }   // Every 2nd Monday
+{ "type": "yearly" }                                  // Same date each year
+{ "type": "interval", "every_n_days": 3 }            // Every 3 days
+
+Recurrence edit scope (applied at application layer, not stored in DB):
+this_only — Detach instance from chain (set recurrence_parent_id = null, clear recurrence_rule), apply changes.
+this_and_future — Update this instance and regenerate all future instances from this date.
+all — Update parent task and regenerate all instances past and future.
+
+5.11 shared_preferences Keys
+
+Key
+Type
+Purpose
+app_theme
+String
+'light' or 'dark'. Applied before first frame.
+notifications_enabled
+bool
+Master notification on/off switch.
+default_reminder_offset
+int
+Minutes before task start for default reminder (0, 5, 10, 15, 30, 60, 1440).
+notification_sound
+String
+Sound identifier for notifications. Phase 1: 'default' only.
+google_calendar_connected
+bool
+Whether Google Calendar OAuth scope is active.
+last_backup_timestamp
+int?
+Unix ms of last successful Google Drive backup. Null if never.
+drive_backup_folder_id
+String?
+Google Drive folder ID for FluxDone_Backup.
+calendar_last_view_mode
+String
+'day', '3day', or 'week'. Restored on Calendar screen open.
+folder_{id}_expanded
+bool
+Per-folder expanded state in side drawer. Dynamic keys.
+6. Routing (go_router)
+6.1 Route Map
+
+Route
+Screen / Purpose
+/
+Home shell: bottom nav bar + left rail. Redirects to /tasks.
+/tasks
+SCR-01 List View (last viewed list or Today smart list on first launch)
+/tasks/:listId
+SCR-01 List View for specific list or smart list ID
+/tasks/:listId/task/:taskId
+SCR-02 Task Detail Sheet (opens over SCR-01)
+/tasks/:listId/new
+SCR-03 Task Creation Sheet (opens over SCR-01)
+/task/recurrence/custom
+Custom recurrence screen (full screen, pushed from SCR-02 recurrence picker)
+/calendar
+SCR-04 Calendar View
+/habits
+SCR-05 Habit Tracker Screen
+/habits/:habitId
+SCR-06 Habit Detail / Edit Screen
+/habits/new
+SCR-07 Habit Creation Sheet (opens over SCR-05)
+/settings
+SCR-09 Settings Screen (root)
+/settings/theme
+Settings sub-screen: Theme selection
+/settings/google
+Settings sub-screen: Google account hub
+/settings/google/backup
+SCR-13 Google Drive Backup Screen
+/settings/notifications
+Settings sub-screen: Notifications configuration
+
+Note: SCR-10 (Folder Management) and SCR-11 (List Management) are NOT routable screens. They are inline operations in the side drawer via AlertDialog and showModalBottomSheet. No go_router routes exist for these screens.
+7. Token-Based Theming Architecture
+7.1 Requirement
+All color values used anywhere in the widget tree must be sourced from ThemeTokens. No color value may be hardcoded inside a Widget's build method or constructor. This is mandatory from Phase 1 to enable Phase 3 JSON custom theming with no widget rewrites.
+
+7.2 ThemeTokens Class
+class ThemeTokens {
+  // Background & surface
+  final Color background;
+  final Color surface;
+  final Color surfaceVariant;
+  // Text
+  final Color textPrimary;
+  final Color textSecondary;
+  // Accent / primary
+  final Color primary;
+  final Color primaryContainer;
+  // Semantic
+  final Color danger;       // #E53935
+  final Color warning;      // #FB8C00
+  final Color success;      // #43A047
+  // Dividers & borders
+  final Color divider;
+  final Color border;
+  // Domain colors (system-locked)
+  final Color numberTheory;    // #2E7D32
+  final Color geometry;        // #1565C0
+  final Color combinatorics;   // #43A047
+  final Color algebraP1;       // #FB8C00
+  final Color algebraP2;       // #E64A19
+  final Color tests;           // #E53935
+  final Color neevDiamond;     // #576481
+}
+
+ThemeTokens is provided to the widget tree via InheritedWidget or Theme.of(context) extension. All widgets access colors via context.tokens.primary, context.tokens.surface, etc. Domain colors are always sourced from ThemeTokens even when user cannot change them (this enables future JSON override).
+
+7.3 Phase 3 JSON Theming
+When Phase 3 is implemented, a JSON file maps token names to hex values. The app parses the JSON and constructs a ThemeTokens instance from it. No widget code changes required. The JSON schema mirrors the ThemeTokens field names exactly.
+8. FluxFoxus Bridge (MethodChannel IPC)
+8.1 Channel Name
+const fdChannel = MethodChannel('com.fluxfoxus/fd_integration');
+
+8.2 FD → FF: FocusBlockRequest
+When a FD task with both start_time and end_time is created, updated, or deleted, FD sends a FocusBlockRequest to FF.
+
+// FD side: send FocusBlockRequest
+await fdChannel.invokeMethod('focusBlockRequest', {
+  'taskId': task.id.toString(),
+  'taskName': task.title,
+  'startTime': task.startTime?.millisecondsSinceEpoch,
+  'endTime': task.endTime?.millisecondsSinceEpoch,
+  'duration': task.duration?.inSeconds,
+  'listId': task.listId.toString(),
+  'sectionId': task.sectionId?.toString(),
+  'action': action.name, // 'create', 'update', or 'delete'
+});
+
+Recurring task instances: each new instance generated by FD fires a new FocusBlockRequest (CREATE action) to FF independently.
+
+8.3 FF → FD: createTask
+FF calls createTask on this channel when a user starts a focus session from FF (not triggered from FD). FD writes a 'Focus Session' task to the 'FF' section of the default list.
+
+// FD side: handle createTask call from FF
+fdChannel.setMethodCallHandler((call) async {
+  if (call.method == 'createTask') {
+    final args = call.arguments as Map;
+    await taskRepository.createTask(Task(
+      title: 'Focus Session',
+      description_md: args['description'],
+      listId: defaultListId,
+      sectionId: ffSectionId, // 'FF' section in default list
+      taskDate: DateTime.now(),
+    ));
+  }
+});
+
+The 'FF' section must exist in the default list from initial app setup. FD creates this section automatically on first launch if it does not exist. The user can rename it but the section identifier (sectionId) is stored in shared_preferences so FF can always resolve it.
+9. Repository Interface Contracts
+9.1 ITaskRepository
+Future<List<Task>> getTasksByListId(int listId)
+Future<List<Task>> getTasksByDate(DateTime date)
+Future<List<Task>> getTasksByDateRange(DateTime start, DateTime end)
+Future<List<Task>> getSmartListTasks(SmartListType type)
+Future<List<Task>> getCompletedTasks()
+Future<List<Task>> getTrashedTasks()
+Future<Task> getTaskById(int id)
+Future<int> createTask(Task task)
+Future<void> updateTask(Task task)
+Future<void> trashTask(int id)
+Future<void> restoreTask(int id)
+Future<void> permanentlyDeleteTask(int id)
+Future<void> emptyTrash()
+Future<void> purgeExpiredTrash() // tasks with trashed_at > 30 days
+Future<List<Task>> getRecurringInstances(int parentId)
+
+9.2 IListRepository
+Future<List<Folder>> getAllFolders()
+Future<List<TaskList>> getListsByFolderId(int folderId)
+Future<List<Section>> getSectionsByListId(int listId)
+Future<int> createFolder(Folder folder)
+Future<int> createList(TaskList list)
+Future<int> createSection(Section section)
+Future<void> updateFolder(Folder folder)
+Future<void> updateList(TaskList list)
+Future<void> deleteFolder(int id)           // ON DELETE CASCADE to lists + tasks
+Future<void> deleteList(int id)             // Soft-deletes all tasks in list
+Future<String> getColorHexByListId(int id)
+Future<String> getListNameById(int id)
+
+9.3 IHabitRepository
+Future<List<Habit>> getAllActiveHabits()
+Future<Habit> getHabitById(int id)
+Future<int> createHabit(Habit habit)
+Future<void> updateHabit(Habit habit)
+Future<void> archiveHabit(int id)
+Future<void> deleteHabit(int id)
+Future<void> recordCompletion(int habitId, DateTime date)
+Future<void> removeCompletion(int habitId, DateTime date)
+Future<List<HabitCompletion>> getCompletionHistory(int habitId)
+Future<int> getCompletionCountForDate(int habitId, DateTime date)
+10. Performance Requirements
+
+Operation
+Target
+Measurement
+App cold start to interactive
+< 2 seconds
+Flutter DevTools timeline
+Task creation (FAB tap to task saved)
+< 200ms
+Manual stopwatch on device
+List view render (up to 100 tasks)
+< 100ms at 60fps
+Flutter DevTools frame rate
+Calendar timeline initial render
+< 300ms
+Flutter DevTools timeline
+Calendar timeline scroll
+No frame drops below 50fps
+Flutter DevTools frame rate
+Smart list query (All — up to 500 tasks)
+< 150ms
+sqflite query timing
+Auto-save debounce (Task Detail)
+500ms from last keystroke
+Unit test on debounce logic
+Google Calendar event fetch
+< 3s on 4G, silent failure offline
+Network timing
+Google Drive backup upload (< 10MB DB)
+< 30 seconds
+Background operation timer
+Local notification delivery accuracy
+Within 1 second of scheduled time
+Manual device testing
+Theme switch (light ↔ dark)
+< 300ms fade transition
+Visual inspection
+11. Development Checklist
+Phase 1 — P0 (Complete in Order)
+☐  Flutter project initialized with correct folder structure (lib/features/, lib/core/).
+☐  ThemeTokens class defined with all color tokens. Light and dark token sets defined. NO hardcoded color values anywhere else in the codebase.
+☐  AppTheme constructs ThemeData from ThemeTokens for both light and dark.
+☐  get_it + injectable DI container configured. All repositories registered.
+☐  SQLite database initialized via sqflite with all v2 tables: folders, task_lists, sections, tasks, subtasks, reminders, habits, habit_completions.
+☐  Database migration system in place (version integer, onUpgrade handler).
+☐  go_router configured with all routes from Section 6.
+☐  Folder CRUD operations implemented (IListRepository → FolderDao).
+☐  List CRUD operations with color_hex implemented.
+☐  Section CRUD operations implemented.
+☐  Task CRUD operations implemented (ITaskRepository → TaskDao). All v2 columns present.
+☐  Task soft-delete to Trash (is_trashed, trashed_at). Restore. Hard delete. Auto-purge on launch.
+☐  Smart list queries: Today, Tomorrow, Upcoming (7 days), All, Completed, Trash.
+☐  Recurring task generation for all 6 recurrence types across month/year boundaries.
+☐  Recurring task edit scope dialog (this only / this and future / all).
+☐  SCR-01 List View: task cards with colored left border, metadata row, priority flag, checkbox.
+☐  Custom checkbox (CustomPainter): rounded square, list-color border, animated fill + checkmark draw.
+☐  SCR-02 Task Detail Sheet: DraggableScrollableSheet 85%→100%, all fields editable, auto-save 500ms debounce.
+☐  Rich text description editor with inline markdown rendering (H1-H3, bold, italic, lists, code).
+☐  Rich text toolbar docked above keyboard (appears only when description field focused).
+☐  SCR-03 Task Creation Sheet: DraggableScrollableSheet 45%→100%, collapsed + expanded states.
+☐  Date picker bottom sheet (calendar grid + quick shortcuts).
+☐  Time picker bottom sheet (clock face, AM/PM, start + end time).
+☐  List selector bottom sheet (folder hierarchy, search field).
+☐  Priority dropdown (anchored overlay, 4 options with flag icons).
+☐  SCR-04 Calendar View: Day/3-day/Week toggle, vertical time grid (60dp/hr), horizontal date scroll.
+☐  Calendar timeline: tap-to-create (ghost block + creation sheet), long press with drag-to-set-end-time.
+☐  Calendar timeline: overlapping task blocks rendered side by side (column layout, max 3 columns).
+☐  Calendar timeline: current time indicator (red line + dot, updates every 60 seconds).
+☐  SCR-08 Side Drawer: modal portrait (80% width), permanent landscape (280dp), folders + lists + smart lists.
+☐  Folder rows: expand/collapse with chevron rotation, long-press context menu.
+☐  List rows: active state highlight, color swatch, long-press context menu.
+☐  Folder management inline: create (AlertDialog), rename (AlertDialog), delete (AlertDialog with cascade warning).
+☐  List management inline: create (bottom sheet with name + color + folder), rename, change color, reorder, move to folder, delete (soft-deletes tasks).
+☐  Color picker bottom sheet: 12 presets + hex input + apply button.
+☐  SCR-08 drag-to-reorder for folders and lists within folder.
+☐  Bottom navigation bar (portrait, 4 tabs). Left navigation rail (landscape). go_router shell route.
+☐  SCR-09 Settings root screen: Appearance, Account, Calendar, Notifications sections + About static rows.
+☐  Settings sub-screen: Theme (RadioListTile Light/Dark, immediate apply, shared_preferences persist).
+☐  Settings sub-screen: Google (account info, Calendar connection, Drive backup row).
+☐  Settings sub-screen: Notifications (master switch, default reminder, sound picker, system settings shortcut).
+☐  SCR-12 Trash Screen: full task cards, restore icon, swipe-right restore, swipe-left delete, Empty Trash, auto-purge.
+☐  SCR-13 Backup Screen: Phase 1 placeholder with orange banner, all controls disabled.
+☐  Theme toggle: light ↔ dark with 300ms fade transition across entire app. Persisted in shared_preferences.
+☐  FluxFoxus bridge: MethodChannel registered (com.fluxfoxus/fd_integration). FocusBlockRequest sent on task create/update/delete where start+end time set. createTask handler registered. 'FF' section auto-created in default list on first launch.
+
+Phase 1 — P1 (After P0 Validation)
+☐  Subtasks: ReorderableListView in Task Detail, drag handles, add/delete, auto-save.
+☐  Priority flags: on task cards (16dp), task detail (20dp), priority picker dropdown.
+☐  Reminders: flutter_local_notifications with Android notification channels. Multiple reminders per task. Cancel on task delete/reschedule.
+☐  Sections: CRUD inline in drawer. Task assignment to section. Section header in list view.
+☐  Calendar drag-to-reschedule: long press task block → drag Y (time) + X (date column). Ghost outline at origin. 15-minute snap. DB update on drop.
+☐  Calendar drag-to-resize: long press bottom edge → drag to extend/shorten duration. 15-minute snap.
+☐  Google Calendar overlay: OAuth sign-in, event fetch for visible date range, outlined blocks, tap to launch Google Calendar app, silent failure.
+☐  SCR-05 Habit Tracker: date strip, habit cards with progress ring + streak + toggle, confetti animation on target completion.
+☐  SCR-06 Habit Detail: stats row, monthly calendar with completion dots, inline editable fields, auto-save.
+☐  SCR-07 Habit Creation Sheet: appearance preview, name, frequency picker, target stepper, reminder time picker.
+☐  Streak calculation: correct current/longest streak from habit_completions. Streak increments on day completion (completions ≥ target_count). Historical day toggle in SCR-06 recalculates streak.
+☐  Habit icon + color picker bottom sheet (12 presets + hex + icon grid from Material icons).
+☐  Task overflow actions: Duplicate, Share, Delete (with undo snackbar). Pin and Convert to note grayed out.
+☐  SCR-01 swipe actions: swipe right → complete, swipe left → delete to trash (flutter_slidable).
+☐  Sort options in SCR-01: by date, by priority, by creation time, manual (drag-to-reorder).
+
+Phase 2
+☐  SCR-13 Backup Screen fully active: Google Drive OAuth drive.file scope, upload fluxdone.db, restore with full-screen overlay + app restart.
+☐  FluxFoxus bridge fully tested on physical device with both apps installed.
+☐  Habit reminder notification scheduling (reminder_time column already stored from Phase 1).
+☐  Pin task UI (is_pinned column already stored from Phase 1).
+☐  Convert to note (Phase 2 feature, design TBD).
+☐  Folder color support (ALTER TABLE migration + color picker wired to folders).
+☐  iOS platform target. Flutter iOS build. All permissions re-mapped to iOS equivalents.
+☐  Web platform target. flutter build web. Calendar and responsive layout validated.
+☐  Home screen widget (design TBD).
+
+Phase 3
+☐  JSON theming UI: download ThemeTokens JSON, edit, re-upload. OR in-app JSON editor.
+☐  JSON schema documentation for users.
+☐  Token validation: invalid hex values rejected with helpful error messages.
+12. Technical Success Criteria
+Phase 1 is technically complete when all of the following are true:
+
+All P0 and P1 features pass manual end-to-end testing on a physical Android device (API 26+) with zero network connectivity.
+SQLite database survives app kill, device restart, and OS-level process termination without data loss or corruption.
+No feature module imports another module's internal files. Module isolation enforced and verified by code review.
+No hardcoded color values exist anywhere in the widget tree. All colors sourced from ThemeTokens.
+All database writes use parameterized sqflite queries. No raw SQL string concatenation anywhere.
+Recurring task generation produces correct instances for all 6 recurrence types across month boundaries and leap years.
+Calendar timeline correctly handles: single task, 2 overlapping tasks, 3 overlapping tasks, task spanning midnight, date-only tasks (no time).
+Auto-save (500ms debounce) correctly batches rapid changes and does not lose data on sheet dismiss.
+Light and dark themes apply correctly on every screen and sub-screen. No color token is missing from either ThemeTokens set.
+Local notifications fire within 1 second of scheduled time on a physical device with app in background and screen off.
+App performance meets all targets defined in Section 10 on a mid-range Android device.
+FD sends FocusBlockRequest to FF correctly on task create/update/delete (with start+end time) when both apps are installed.
+FD receives createTask from FF and writes 'Focus Session' task to the 'FF' section of the default list correctly.
+Habit streak calculation is correct for all frequency types including retroactive day toggles in SCR-06.

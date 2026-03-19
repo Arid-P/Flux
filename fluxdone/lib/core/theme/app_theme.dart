@@ -7,13 +7,22 @@ class AppTheme {
     return ThemeData(
       brightness: Brightness.light,
       primaryColor: tokens.primary,
-      scaffoldBackgroundColor: tokens.background,
+      scaffoldBackgroundColor: tokens.surface,
       fontFamily: 'Roboto', // Default standard font
-      colorScheme: ColorScheme.light(
-        primary: tokens.primary,
+      colorScheme: ColorScheme.fromSeed(
+        seedColor: tokens.primary,
         surface: tokens.surface,
-        error: tokens.error,
-        background: tokens.background,
+        error: const Color(0xFFE53935),
+      ),
+      appBarTheme: AppBarTheme(
+        backgroundColor: tokens.surface,
+        elevation: 0,
+        iconTheme: IconThemeData(color: tokens.textPrimary),
+        titleTextStyle: TextStyle(
+          color: tokens.textPrimary,
+          fontSize: 20,
+          fontWeight: FontWeight.w600,
+        ),
       ),
       listTileTheme: ListTileThemeData(
         textColor: tokens.textPrimary,
@@ -34,24 +43,13 @@ class AppTheme {
     return ThemeData(
       brightness: Brightness.dark,
       primaryColor: tokens.primary,
-      scaffoldBackgroundColor: tokens.background,
+      scaffoldBackgroundColor: tokens.surface,
       fontFamily: 'Roboto',
-      colorScheme: ColorScheme.dark(
-        primary: tokens.primary,
+      colorScheme: ColorScheme.fromSeed(
+        seedColor: tokens.primary,
+        brightness: Brightness.dark,
         surface: tokens.surface,
-        error: tokens.error,
-        background: tokens.background,
-      ),
-      listTileTheme: ListTileThemeData(
-        textColor: tokens.textPrimary,
-        iconColor: tokens.textSecondary,
-      ),
-      dividerTheme: DividerThemeData(
-        color: tokens.divider,
-      ),
-      textTheme: TextTheme(
-        bodyMedium: TextStyle(color: tokens.textPrimary),
-        bodySmall: TextStyle(color: tokens.textSecondary),
+        error: const Color(0xFFE53935),
       ),
     );
   }
