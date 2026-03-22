@@ -2,11 +2,16 @@ import 'package:injectable/injectable.dart';
 import '../../../core/database/database_helper.dart';
 import '../domain/i_task_repository.dart';
 import '../domain/entities.dart';
+import '../../../core/notifications/notification_service.dart';
 
 @LazySingleton(as: ITaskRepository)
 class TaskRepositoryImpl implements ITaskRepository {
   final DatabaseHelper dbHelper;
-  TaskRepositoryImpl(this.dbHelper);
+  final NotificationService notificationService;
+
+  TaskRepositoryImpl(this.dbHelper, this.notificationService);
+
+
 
   // ── Helpers ──────────────────────────────────────────────
   int _startOfDay(DateTime d) =>
@@ -159,6 +164,12 @@ class TaskRepositoryImpl implements ITaskRepository {
       where: 'id = ?',
       whereArgs: [taskId],
     );
+
+    // Cancel all reminders for this task
+    final reminders = await getRemindersByTaskId(taskId);
+    for (final r in reminders) {
+      await notificationService.cancelNotification(r.notificationId);
+    }
   }
 
   @override
@@ -176,6 +187,11 @@ class TaskRepositoryImpl implements ITaskRepository {
   @override
   Future<void> permanentlyDeleteTask(int taskId) async {
     final db = await dbHelper.database;
+    // Cancel all reminders first
+    final reminders = await getRemindersByTaskId(taskId);
+    for (final r in reminders) {
+      await notificationService.cancelNotification(r.notificationId);
+    }
     await db.delete('tasks', where: 'id = ?', whereArgs: [taskId]);
   }
 
@@ -224,12 +240,29 @@ class TaskRepositoryImpl implements ITaskRepository {
   @override
   Future<int> createReminder(Reminder reminder) async {
     final db = await dbHelper.database;
-    return await db.insert('reminders', reminder.toMap());
+    final id = await db.insert('reminders', reminder.toMap());
+    
+    // Schedule notification
+    final task = await getTaskById(reminder.taskId);
+    if (task != null && !task.isCompleted && !task.isTrashed) {
+      await notificationService.scheduleNotification(
+        id: reminder.notificationId,
+        title: 'Task Reminder',
+        body: task.title,
+        scheduledDate: DateTime.fromMillisecondsSinceEpoch(reminder.remindAt),
+      );
+    }
+    return id;
   }
 
   @override
   Future<void> deleteReminder(int reminderId) async {
     final db = await dbHelper.database;
+    final result = await db.query('reminders', where: 'id = ?', whereArgs: [reminderId]);
+    if (result.isNotEmpty) {
+      final reminder = Reminder.fromMap(result.first);
+      await notificationService.cancelNotification(reminder.notificationId);
+    }
     await db.delete('reminders', where: 'id = ?', whereArgs: [reminderId]);
   }
 

@@ -1,25 +1,38 @@
-import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+import '../../features/settings/data/preferences_repository.dart';
+import 'package:flutter/material.dart';
 
 class ThemeCubit extends Cubit<ThemeMode> {
-  static const String _themeKey = 'app_theme_mode';
-  final SharedPreferences prefs;
+  final PreferencesRepository _prefsRepo;
 
-  ThemeCubit(this.prefs) : super(_loadTheme(prefs));
+  ThemeCubit(this._prefsRepo) : super(_loadTheme(_prefsRepo));
 
-  static ThemeMode _loadTheme(SharedPreferences prefs) {
-    final isDark = prefs.getBool(_themeKey);
-    if (isDark == null) return ThemeMode.system;
-    return isDark ? ThemeMode.dark : ThemeMode.light;
+  static ThemeMode _loadTheme(PreferencesRepository repo) {
+    final themeStr = repo.getAppTheme();
+    switch (themeStr) {
+      case 'light':
+        return ThemeMode.light;
+      case 'dark':
+        return ThemeMode.dark;
+      default:
+        return ThemeMode.system;
+    }
   }
 
   Future<void> setTheme(ThemeMode mode) async {
-    if (mode == ThemeMode.system) {
-      await prefs.remove(_themeKey);
-    } else {
-      await prefs.setBool(_themeKey, mode == ThemeMode.dark);
+    String themeStr;
+    switch (mode) {
+      case ThemeMode.light:
+        themeStr = 'light';
+        break;
+      case ThemeMode.dark:
+        themeStr = 'dark';
+        break;
+      case ThemeMode.system:
+        themeStr = 'system';
+        break;
     }
+    await _prefsRepo.setAppTheme(themeStr);
     emit(mode);
   }
 
@@ -31,3 +44,4 @@ class ThemeCubit extends Cubit<ThemeMode> {
     await setTheme(isCurrentlyDark ? ThemeMode.light : ThemeMode.dark);
   }
 }
+

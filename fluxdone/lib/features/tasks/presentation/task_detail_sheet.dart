@@ -4,6 +4,7 @@ import '../../../core/theme/theme_tokens.dart';
 import '../../../core/utils/hex_color.dart';
 import '../../../core/di/injection.dart';
 import '../domain/entities.dart';
+import '../domain/i_task_repository.dart';
 import 'bloc/tasks_cubit.dart';
 
 class TaskDetailSheet extends StatefulWidget {
@@ -34,6 +35,7 @@ class _TaskDetailSheetState extends State<TaskDetailSheet> {
   late TextEditingController _descCtrl;
   late bool _isCompleted;
   late int _priority;
+  List<Reminder> _reminders = [];
   bool _isDirty = false;
 
   @override
@@ -46,6 +48,17 @@ class _TaskDetailSheetState extends State<TaskDetailSheet> {
 
     _titleCtrl.addListener(_markDirty);
     _descCtrl.addListener(_markDirty);
+    _loadReminders();
+  }
+
+  Future<void> _loadReminders() async {
+    if (widget.task.id == null) return;
+    final reminders = await getIt<ITaskRepository>().getRemindersByTaskId(widget.task.id!);
+    if (mounted) {
+      setState(() {
+        _reminders = reminders;
+      });
+    }
   }
 
   void _markDirty() => _isDirty = true;
@@ -165,6 +178,32 @@ class _TaskDetailSheetState extends State<TaskDetailSheet> {
 
                 // Priority
                 _buildPriorityRow(tokens),
+
+                // Reminders
+                const Divider(height: 32),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: Row(
+                    children: [
+                      Text('Reminders',
+                          style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600,
+                              color: tokens.textSecondary)),
+                      const Spacer(),
+                      IconButton(
+                        icon: Icon(Icons.add_alarm, size: 20, color: tokens.primary),
+                        onPressed: _addReminder,
+                      ),
+                    ],
+                  ),
+                ),
+                ..._reminders.map((r) => _buildReminderTile(r, tokens)),
+                if (_reminders.isEmpty)
+                   Padding(
+                     padding: const EdgeInsets.symmetric(horizontal: 16),
+                     child: Text('No reminders set', style: TextStyle(fontSize: 13, color: tokens.textSecondary.withOpacity(0.6))),
+                   ),
 
                 const Divider(height: 32),
 
@@ -299,4 +338,58 @@ class _TaskDetailSheetState extends State<TaskDetailSheet> {
     }
     return result;
   }
+
+  Widget _buildReminderTile(Reminder r, ThemeTokens tokens) {
+    final dt = DateTime.fromMillisecondsSinceEpoch(r.remindAt);
+    final timeStr = TimeOfDay.fromDateTime(dt).format(context);
+    
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: tokens.surfaceVariant.withOpacity(0.5),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Row(
+          children: [
+            Icon(Icons.notifications_active_outlined, size: 16, color: tokens.primary),
+            const SizedBox(width: 8),
+            Text(timeStr, style: TextStyle(fontSize: 14, color: tokens.textPrimary)),
+            const Spacer(),
+            GestureDetector(
+              onTap: () => _deleteReminder(r),
+              child: Icon(Icons.close, size: 16, color: tokens.textSecondary),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _addReminder() async {
+    final time = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay.now(),
+    );
+    if (time != null) {
+       final now = DateTime.now();
+       final remindDt = DateTime(now.year, now.month, now.day, time.hour, time.minute);
+       
+       final reminder = Reminder(
+         taskId: widget.task.id!,
+         remindAt: remindDt.millisecondsSinceEpoch,
+         notificationId: DateTime.now().millisecondsSinceEpoch.remainder(100000),
+       );
+       
+       await getIt<ITaskRepository>().createReminder(reminder);
+       _loadReminders();
+    }
+  }
+
+  Future<void> _deleteReminder(Reminder r) async {
+    await getIt<ITaskRepository>().deleteReminder(r.id!);
+    _loadReminders();
+  }
 }
+

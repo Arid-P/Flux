@@ -19,10 +19,13 @@ import '../../features/habits/presentation/bloc/habits_cubit.dart' as _i28;
 import '../../features/lists/data/list_repository_impl.dart' as _i640;
 import '../../features/lists/domain/i_list_repository.dart' as _i13;
 import '../../features/lists/presentation/bloc/lists_cubit.dart' as _i450;
+import '../../features/settings/data/preferences_repository.dart' as _i202;
+import '../../features/settings/presentation/bloc/settings_cubit.dart' as _i819;
 import '../../features/tasks/data/task_repository_impl.dart' as _i382;
 import '../../features/tasks/domain/i_task_repository.dart' as _i878;
 import '../../features/tasks/presentation/bloc/tasks_cubit.dart' as _i1063;
 import '../database/database_helper.dart' as _i64;
+import '../notifications/notification_service.dart' as _i229;
 import 'register_module.dart' as _i291;
 
 extension GetItInjectableX on _i174.GetIt {
@@ -38,6 +41,12 @@ extension GetItInjectableX on _i174.GetIt {
       preResolve: true,
     );
     gh.lazySingleton<_i64.DatabaseHelper>(() => _i64.DatabaseHelper());
+    gh.lazySingleton<_i229.NotificationService>(
+      () => _i229.NotificationService(),
+    );
+    gh.lazySingleton<_i202.PreferencesRepository>(
+      () => _i202.PreferencesRepository(gh<_i460.SharedPreferences>()),
+    );
     gh.lazySingleton<_i13.IListRepository>(
       () => _i640.ListRepositoryImpl(gh<_i64.DatabaseHelper>()),
     );
@@ -48,7 +57,13 @@ extension GetItInjectableX on _i174.GetIt {
       () => _i450.ListsCubit(gh<_i13.IListRepository>()),
     );
     gh.lazySingleton<_i878.ITaskRepository>(
-      () => _i382.TaskRepositoryImpl(gh<_i64.DatabaseHelper>()),
+      () => _i382.TaskRepositoryImpl(
+        gh<_i64.DatabaseHelper>(),
+        gh<_i229.NotificationService>(),
+      ),
+    );
+    gh.factory<_i819.SettingsCubit>(
+      () => _i819.SettingsCubit(gh<_i202.PreferencesRepository>()),
     );
     gh.factory<_i1063.TasksCubit>(
       () => _i1063.TasksCubit(

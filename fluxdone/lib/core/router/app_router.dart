@@ -5,6 +5,9 @@ import '../../features/tasks/presentation/tasks_screen.dart';
 import '../../features/calendar/presentation/calendar_screen.dart';
 import '../../features/habits/presentation/habits_screen.dart';
 import '../../features/settings/presentation/settings_screen.dart';
+import '../../features/settings/presentation/theme_sub_screen.dart';
+import '../../features/settings/presentation/notifications_sub_screen.dart';
+import '../../features/settings/presentation/google_sub_screen.dart';
 
 final GlobalKey<NavigatorState> _rootNavigatorKey = GlobalKey<NavigatorState>(debugLabel: 'root');
 final GlobalKey<NavigatorState> _shellNavigatorTasksKey = GlobalKey<NavigatorState>(debugLabel: 'shellTasks');
@@ -60,7 +63,22 @@ final GoRouter appRouter = GoRouter(
             GoRoute(
               path: '/settings',
               builder: (BuildContext context, GoRouterState state) => const SettingsScreen(),
+              routes: [
+                GoRoute(
+                  path: 'theme',
+                  builder: (context, state) => const ThemeSubScreen(),
+                ),
+                GoRoute(
+                  path: 'notifications',
+                  builder: (context, state) => const NotificationsSubScreen(),
+                ),
+                GoRoute(
+                  path: 'google',
+                  builder: (context, state) => const GoogleSubScreen(),
+                ),
+              ],
             ),
+
           ],
         ),
       ],
