@@ -39,14 +39,39 @@ Flux/
 │   │       ├── habits/
 │   │       ├── lists/
 │   │       ├── smart_lists/
+│   │       ├── notes/
 │   │       ├── navigation/
 │   │       ├── settings/
 │   │       ├── backup/
+│   │       ├── data_portability/
+│   │       ├── statistics/
+│   │       ├── templates/
+│   │       ├── smart_recognition/
 │   │       └── fluxfoxus_bridge/
 │   ├── test/
 │   └── pubspec.yaml
 │
 ├── fluxfoxus/         # FluxFoxus Flutter project (build pending)
+│   ├── android/
+│   ├── lib/
+│   │   ├── core/
+│   │   └── features/
+│   │       ├── home/
+│   │       ├── focus_timer/
+│   │       ├── breaks/
+│   │       ├── streaks/
+│   │       ├── app_limits/
+│   │       ├── presets/
+│   │       ├── planner/
+│   │       ├── usage_stats/
+│   │       ├── youtube_study_mode/
+│   │       ├── fd_integration/
+│   │       ├── widget/
+│   │       ├── security/
+│   │       ├── ai/
+│   │       ├── focus_score/
+│   │       └── friction/
+│   └── pubspec.yaml
 │
 ├── prompts_docx/      # Antigravity GMPs and spec docs (gitignored)
 ├── FLUX_CONTEXT.md    # Shared context document for both apps
@@ -103,6 +128,7 @@ Shares the same Clean Architecture layer model as FD. Key difference: FF require
 | Habit Animation | confetti |
 | Event Bus | rxdart |
 | Date Formatting | intl |
+| Home Widget | home_widget |
 | IPC | Flutter MethodChannel |
 | Testing | flutter_test + mocktail |
 
@@ -113,6 +139,7 @@ Shares the same Clean Architecture layer model as FD. Key difference: FF require
 | Framework | Flutter (Dart) |
 | State Management | riverpod (v2+) |
 | Local Database | sqflite + Hive |
+| Secure Storage | flutter_secure_storage |
 | Navigation | go_router |
 | Notifications | flutter_local_notifications |
 | Background Tasks | workmanager + flutter_foreground_task |
@@ -127,7 +154,7 @@ Shares the same Clean Architecture layer model as FD. Key difference: FF require
 
 **FluxDone** uses SQLite exclusively via `sqflite`. No Hive. `shared_preferences` handles lightweight key-value settings (theme selection, last calendar view mode, folder expanded states, last backup timestamp).
 
-**FluxFoxus** uses SQLite via `sqflite` for relational data (sessions, presets, app limits) and Hive for fast key-value caching (screen time cache, widget refresh data).
+**FluxFoxus** uses SQLite via `sqflite` for relational data (sessions, presets, app limits, focus scores) and Hive for fast key-value caching (user preferences, app categorization, channel whitelist, AI settings).
 
 All timestamps are stored as **Unix epoch milliseconds (UTC)**. Application layer handles local time conversion.
 
@@ -138,21 +165,9 @@ All timestamps are stored as **Unix epoch milliseconds (UTC)**. Application laye
 All color values in the widget tree are sourced from `ThemeTokens` — no hardcoded hex values anywhere. This enables Phase 3 JSON custom theming with zero widget rewrites.
 
 - **Phase 1:** Light + Dark themes
-- **Phase 3:** JSON-based custom theme upload/download (VSCode-style)
+- **Phase 3:** JSON-based custom theme (ThemeTokens + list colors + typography). Download/upload or in-app editor. Multiple saved themes, 3 MB storage cap.
 
-7 academic domain colors are system-locked and mirrored in the Notewise companion app:
-
-| Domain | Hex |
-|---|---|
-| Number Theory | `#2E7D32` |
-| Geometry | `#1565C0` |
-| Combinatorics | `#43A047` |
-| Algebra P1 | `#FB8C00` |
-| Algebra P2 | `#E64A19` |
-| Tests | `#E53935` |
-| Neev Diamond | `#576481` |
-
-All other lists use a fully user-defined hex color picker.
+List colors are fully user-defined via hex picker. No system-locked colors.
 
 ---
 
@@ -175,26 +190,40 @@ Dark mode only in Phase 1.
 
 Channel name: `com.fluxfoxus/fd_integration`
 
-**FD → FF:** When a task with `start_time` + `end_time` is created, updated, or deleted, FD sends a `FocusBlockRequest` (action: CREATE / UPDATE / DELETE). FF creates, updates, or deletes the linked FocusSession.
+| Method | Direction | Purpose |
+|---|---|---|
+| `FocusBlockRequest` (CREATE/UPDATE/DELETE) | FD → FF | Timed task created/updated/deleted in FD |
+| `createTask` | FF → FD | FF session started — writes Focus Session task to FD |
+| `getTaskBlocks` | FF → FD | FF queries FD for timed tasks in a date range (P3 auto-scheduling) |
+| `getFocusSessions` | FD → FF | FD queries FF for focus sessions in a date range (P4 overlap warning) |
+| `getDayTaskSummary` | FF → FD | FF queries FD for task completion data for Focus Score (P4.FF) |
 
-**FF → FD:** When a focus session is started directly from FF, FF calls `createTask` on FD. FD writes a "Focus Session" task to the `FF` section of the default list. This section is auto-created on FD's first launch; its `sectionId` is stored in `shared_preferences`.
+**IPC rule:** Bridge code is built last — after both apps are individually stable per phase. P4.FF is the P4 IPC sub-version.
 
 ---
 
 ## Development Phases
 
 ### FluxDone
+
 | Phase | Scope |
 |---|---|
-| **Phase 1** | All P0 + P1 features. Both light and dark themes. Offline-only. Android. |
-| **Phase 2** | Google Drive backup, Google Calendar overlay, drag-to-reschedule, pin tasks, iOS + Web. |
-| **Phase 3** | JSON custom theming UI. |
+| **P1** | Task CRUD, Calendar View, Habits, Lists/Folders/Sections, Smart Lists, recurring tasks, rich text, light + dark themes. Android. |
+| **P2** | Google Drive backup, Google Calendar overlay, drag-to-reschedule, pin tasks, Won't Do task status. |
+| **P3** | JSON custom theming, Home screen widgets (WIDGET-01/02), Data Import, Data Export, Subtask progress on list view, Notes. |
+| **P4** | Focus time blocking overlap warning, Statistics screen (Tasks + Habits), NLP task parsing (Smart Recognition), Task Templates, Multi-select bulk time-shift on Calendar, Linked tasks. |
+| **P5** | Website, Windows, Linux, macOS. |
 
 ### FluxFoxus
+
 | Phase | Scope |
 |---|---|
-| **Phase 1** | Full feature set (Focus Timer, App Limits, Block Scheduling, YouTube Study Mode, Screen Time Tracking, Home Widget, Weekly Report). Dark only. Android. |
-| **Phase 2** | iOS. |
+| **P1** | Focus Timer (flip clock), Break System, Stop Focusing modal, Streaks, App Limits, YouTube Study Mode, Block Scheduling, Screen Time Tracking, Planner, Weekly Report, Home Widget. Dark only. Android. |
+| **P2** | Uninstall protection, Scheduled sessions, AI break negotiation (user API key), Streak grace day, Post-session reflection. |
+| **P3** | Focus Score (checkpoint system, weighted formula), Session templates + auto-scheduling, Lock screen session status, AI improvements (Session Debrief, Preset Suggester, Streak Coach, Difficulty Auto-Adjust), Bug fixes + polish. |
+| **P4** | Focus Score enhancement (FD task data + AI hybrid), Pre-open friction, Category limits, App limit smart suggestions. |
+| **P4.FF** | IPC bridge additions for P4 cross-app features. Built after P4 features are individually stable. |
+| **P5** | Website, Windows, Linux, iOS, macOS. |
 
 ---
 
@@ -231,21 +260,33 @@ targetSdkVersion 34
 
 All code is generated via **Antigravity (ag)** — an AI coding agent. Ari directs architecture and logic; Antigravity writes all implementation. Specification documents in `prompts_docx/` (gitignored) are the source of truth for every implementation decision.
 
-**Spec documents:**
+**Spec documents — FluxDone:**
 - `FLUX_CONTEXT.md` — shared context for both apps
 - `FluxDone_PRD_v2.docx` — product requirements
 - `FluxDone_TRD_v2.docx` — technical requirements
-- `ui_SCR-01` through `ui_SCR-13` — locked UI specifications (13 screens)
-- `ui_ICONS_icon-system.md` — icon system spec
-- `FF_PRD_v1.0.md`, `FF_TRD_v1.0.md` — FF product + technical requirements
-- 10 FF UI specification files
+- `ui_SCR-01` through `ui_SCR-13` + `ui_ICONS_icon-system.md` — locked P1 UI specs
+- `FD_P2_AMENDMENT_wont-do-status.md` — P2 amendment
+- `FD_P3_F1` through `FD_P3_F6` + widget specs — P3 specs
+- `FD_P4_F1` through `FD_P4_F6` — P4 specs
+
+**Spec documents — FluxFoxus:**
+- `FF_PRD_v1.0.md`, `FF_TRD_v1.0.md` — P1 product + technical requirements
+- 10 FF P1 UI specification files
+- `FF_P2_F1` through `FF_P2_F5` — P2 specs
+- `FF_P3_F1` through `FF_P3_F5` — P3 specs
+- `FF_P4_F1` through `FF_P4_F4` — P4 specs
 
 **Rule:** No deviation from spec documents without explicit approval from Ari.
 
 ---
 
-## Notes
+## Key Principles
 
-- FD must be fully user-validated before FF build begins.
-- IPC bridge is built last — after both apps are individually stable.
-- `flutter.zip` at repo root: delete it, it has no place here.
+- **Spec-first, always.** All decisions locked before any code is written.
+- **Modular.** Every feature is a self-contained module. One broken module must not cascade.
+- **Offline-first.** Core functionality works with zero network. Network features are enhancements.
+- **Token-based theming.** All colors via ThemeTokens in FD. No hardcoded values.
+- **Clone first.** Phase 1 replicates the existing apps' workflows exactly.
+- **FD before FF.** Build and validate FluxDone completely before beginning FluxFoxus.
+- **IPC last.** The MethodChannel bridge is built after both apps are individually stable per phase.
+- **No online database.** All features use local SQLite/Hive. No server-side database at any phase.
