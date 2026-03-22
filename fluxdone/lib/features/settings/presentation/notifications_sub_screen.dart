@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import '../bloc/settings_cubit.dart';
+import 'bloc/settings_cubit.dart';
 import '../../../../core/theme/theme_tokens.dart';
 
 class NotificationsSubScreen extends StatelessWidget {
