@@ -13,6 +13,8 @@ import 'package:get_it/get_it.dart' as _i174;
 import 'package:injectable/injectable.dart' as _i526;
 import 'package:shared_preferences/shared_preferences.dart' as _i460;
 
+import '../../features/fluxfoxus_bridge/data/fluxfocus_bridge_service.dart'
+    as _i234;
 import '../../features/habits/data/habit_repository_impl.dart' as _i498;
 import '../../features/habits/domain/i_habit_repository.dart' as _i527;
 import '../../features/habits/presentation/bloc/habits_cubit.dart' as _i28;
@@ -44,6 +46,16 @@ extension GetItInjectableX on _i174.GetIt {
     gh.lazySingleton<_i229.NotificationService>(
       () => _i229.NotificationService(),
     );
+    gh.lazySingleton<_i234.FluxFocusBridgeService>(
+      () => _i234.FluxFocusBridgeService(),
+    );
+    gh.lazySingleton<_i878.ITaskRepository>(
+      () => _i382.TaskRepositoryImpl(
+        gh<_i64.DatabaseHelper>(),
+        gh<_i229.NotificationService>(),
+        gh<_i234.FluxFocusBridgeService>(),
+      ),
+    );
     gh.lazySingleton<_i202.PreferencesRepository>(
       () => _i202.PreferencesRepository(gh<_i460.SharedPreferences>()),
     );
@@ -55,12 +67,6 @@ extension GetItInjectableX on _i174.GetIt {
     );
     gh.factory<_i450.ListsCubit>(
       () => _i450.ListsCubit(gh<_i13.IListRepository>()),
-    );
-    gh.lazySingleton<_i878.ITaskRepository>(
-      () => _i382.TaskRepositoryImpl(
-        gh<_i64.DatabaseHelper>(),
-        gh<_i229.NotificationService>(),
-      ),
     );
     gh.factory<_i819.SettingsCubit>(
       () => _i819.SettingsCubit(gh<_i202.PreferencesRepository>()),

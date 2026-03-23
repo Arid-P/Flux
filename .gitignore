@@ -49,9 +49,7 @@ client_secret*.json
 *.log
 error.log
 
-# ── Antigravity / prompts ────────────────────────────────────
-prompts_docx/
-
 # ── Misc ─────────────────────────────────────────────────────
 pubspec.lock
 flutter.zip
+

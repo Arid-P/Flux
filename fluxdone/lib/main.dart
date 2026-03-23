@@ -9,11 +9,13 @@ import 'features/settings/presentation/bloc/settings_cubit.dart';
 import 'features/settings/data/preferences_repository.dart';
 
 import 'core/notifications/notification_service.dart';
+import 'features/fluxfoxus_bridge/data/fluxfocus_bridge_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await configureDependencies();
   await getIt<NotificationService>().init();
+  await getIt<FluxFocusBridgeService>().init();
   
   runApp(const FluxDoneApp());
 }

@@ -3,13 +3,40 @@ import '../../../core/database/database_helper.dart';
 import '../domain/i_task_repository.dart';
 import '../domain/entities.dart';
 import '../../../core/notifications/notification_service.dart';
+import '../../fluxfoxus_bridge/data/fluxfocus_bridge_service.dart';
+import '../../fluxfoxus_bridge/domain/focus_block_request.dart';
 
 @LazySingleton(as: ITaskRepository)
 class TaskRepositoryImpl implements ITaskRepository {
   final DatabaseHelper dbHelper;
   final NotificationService notificationService;
+  final FluxFocusBridgeService bridgeService;
 
-  TaskRepositoryImpl(this.dbHelper, this.notificationService);
+  TaskRepositoryImpl(this.dbHelper, this.notificationService, this.bridgeService);
+
+  void _syncTaskToFluxFocus(Task task, String action) {
+    int duration = 0;
+    if (task.startTime != null && task.endTime != null) {
+      duration = (task.endTime! - task.startTime!) ~/ 60000;
+    }
+
+    final request = FocusBlockRequest(
+      taskId: task.id.toString(),
+      taskName: task.title,
+      startTime: task.startTime != null 
+          ? DateTime.fromMillisecondsSinceEpoch(task.startTime!) 
+          : null,
+      endTime: task.endTime != null 
+          ? DateTime.fromMillisecondsSinceEpoch(task.endTime!) 
+          : null,
+      duration: duration,
+      listId: task.listId.toString(),
+      sectionId: task.sectionId?.toString(),
+      action: action,
+    );
+    bridgeService.sendFocusBlockRequest(request);
+  }
+
 
 
 
@@ -24,7 +51,10 @@ class TaskRepositoryImpl implements ITaskRepository {
   @override
   Future<int> createTask(Task task) async {
     final db = await dbHelper.database;
-    return await db.insert('tasks', task.toMap());
+    final id = await db.insert('tasks', task.toMap());
+    final newTask = task.copyWith(id: id);
+    _syncTaskToFluxFocus(newTask, 'create');
+    return id;
   }
 
   @override
@@ -33,6 +63,7 @@ class TaskRepositoryImpl implements ITaskRepository {
     final map = task.toMap();
     map['updated_at'] = DateTime.now().millisecondsSinceEpoch;
     await db.update('tasks', map, where: 'id = ?', whereArgs: [task.id]);
+    _syncTaskToFluxFocus(task, 'update');
   }
 
   @override
@@ -142,25 +173,30 @@ class TaskRepositoryImpl implements ITaskRepository {
     final task = await getTaskById(taskId);
     if (task == null) return;
     final now = DateTime.now().millisecondsSinceEpoch;
+    final updatedTask = task.copyWith(
+      isCompleted: !task.isCompleted,
+      completedAt: !task.isCompleted ? now : null,
+    );
     await db.update(
       'tasks',
-      {
-        'is_completed': task.isCompleted ? 0 : 1,
-        'completed_at': task.isCompleted ? null : now,
-        'updated_at': now,
-      },
+      updatedTask.toMap(),
       where: 'id = ?',
       whereArgs: [taskId],
     );
+    _syncTaskToFluxFocus(updatedTask, 'update');
   }
 
   @override
   Future<void> softDeleteTask(int taskId) async {
     final db = await dbHelper.database;
+    final task = await getTaskById(taskId);
+    if (task == null) return;
+    
     final now = DateTime.now().millisecondsSinceEpoch;
+    final trashedTask = task.copyWith(isTrashed: true, trashedAt: now);
     await db.update(
       'tasks',
-      {'is_trashed': 1, 'trashed_at': now, 'updated_at': now},
+      trashedTask.toMap(),
       where: 'id = ?',
       whereArgs: [taskId],
     );
@@ -170,6 +206,8 @@ class TaskRepositoryImpl implements ITaskRepository {
     for (final r in reminders) {
       await notificationService.cancelNotification(r.notificationId);
     }
+    
+    _syncTaskToFluxFocus(trashedTask, 'delete');
   }
 
   @override
@@ -187,12 +225,18 @@ class TaskRepositoryImpl implements ITaskRepository {
   @override
   Future<void> permanentlyDeleteTask(int taskId) async {
     final db = await dbHelper.database;
+    final task = await getTaskById(taskId);
+    
     // Cancel all reminders first
     final reminders = await getRemindersByTaskId(taskId);
     for (final r in reminders) {
       await notificationService.cancelNotification(r.notificationId);
     }
     await db.delete('tasks', where: 'id = ?', whereArgs: [taskId]);
+    
+    if (task != null) {
+      _syncTaskToFluxFocus(task, 'delete');
+    }
   }
 
   @override
