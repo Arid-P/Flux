@@ -70,8 +70,12 @@ Flux/
 │   │       ├── security/
 │   │       ├── ai/
 │   │       ├── focus_score/
-│   │       └── friction/
+│   │       ├── friction/
+│   │       └── multi_device/
 │   └── pubspec.yaml
+│
+├── cloudflare/        # Cloudflare Worker (FF P4 multi-device sync)
+│   └── worker.js
 │
 ├── prompts_docx/      # Antigravity GMPs and spec docs (gitignored)
 ├── FLUX_CONTEXT.md    # Shared context document for both apps
@@ -150,13 +154,17 @@ Shares the same Clean Architecture layer model as FD. Key difference: FF require
 
 ---
 
-## Database
+## Database & Sync
 
-**FluxDone** uses SQLite exclusively via `sqflite`. No Hive. `shared_preferences` handles lightweight key-value settings (theme selection, last calendar view mode, folder expanded states, last backup timestamp).
+**FluxDone** uses SQLite exclusively via `sqflite`. No Hive. `shared_preferences` handles lightweight key-value settings.
 
-**FluxFoxus** uses SQLite via `sqflite` for relational data (sessions, presets, app limits, focus scores) and Hive for fast key-value caching (user preferences, app categorization, channel whitelist, AI settings).
+**FluxFoxus** uses SQLite via `sqflite` for relational data and Hive for fast key-value caching.
 
 All timestamps are stored as **Unix epoch milliseconds (UTC)**. Application layer handles local time conversion.
+
+**FF Multi-Device Sync (P4)** uses two layers:
+- **Cloudflare D1 + Worker** — live session state sync and app limits usage sync between devices (real-time, ~200 bytes per user)
+- **Google Drive** — full SQLite dump every 24 hours + change-triggered (120s debounce). Passive data (presets, streaks, history) propagates via D1 notification flag + selective merge on Device B
 
 ---
 
@@ -196,9 +204,9 @@ Channel name: `com.fluxfoxus/fd_integration`
 | `createTask` | FF → FD | FF session started — writes Focus Session task to FD |
 | `getTaskBlocks` | FF → FD | FF queries FD for timed tasks in a date range (P3 auto-scheduling) |
 | `getFocusSessions` | FD → FF | FD queries FF for focus sessions in a date range (P4 overlap warning) |
-| `getDayTaskSummary` | FF → FD | FF queries FD for task completion data for Focus Score (P4.FF) |
+| `getDayTaskSummary` | FF → FD | FF queries FD for task completion data for Focus Score (P4) |
 
-**IPC rule:** Bridge code is built last — after both apps are individually stable per phase. P4.FF is the P4 IPC sub-version.
+**IPC rule:** Bridge code is built last — after both apps are individually stable per phase.
 
 ---
 
@@ -209,7 +217,7 @@ Channel name: `com.fluxfoxus/fd_integration`
 | Phase | Scope |
 |---|---|
 | **P1** | Task CRUD, Calendar View, Habits, Lists/Folders/Sections, Smart Lists, recurring tasks, rich text, light + dark themes. Android. |
-| **P2** | Google Drive backup, Google Calendar overlay, drag-to-reschedule, pin tasks, Won't Do task status. |
+| **P2** | Google Drive auto-backup, Google Calendar overlay, drag-to-reschedule, pin tasks, Won't Do task status. |
 | **P3** | JSON custom theming, Home screen widgets (WIDGET-01/02), Data Import, Data Export, Subtask progress on list view, Notes. |
 | **P4** | Focus time blocking overlap warning, Statistics screen (Tasks + Habits), NLP task parsing (Smart Recognition), Task Templates, Multi-select bulk time-shift on Calendar, Linked tasks. |
 | **P5** | Website, Windows, Linux, macOS. |
@@ -221,8 +229,7 @@ Channel name: `com.fluxfoxus/fd_integration`
 | **P1** | Focus Timer (flip clock), Break System, Stop Focusing modal, Streaks, App Limits, YouTube Study Mode, Block Scheduling, Screen Time Tracking, Planner, Weekly Report, Home Widget. Dark only. Android. |
 | **P2** | Uninstall protection, Scheduled sessions, AI break negotiation (user API key), Streak grace day, Post-session reflection. |
 | **P3** | Focus Score (checkpoint system, weighted formula), Session templates + auto-scheduling, Lock screen session status, AI improvements (Session Debrief, Preset Suggester, Streak Coach, Difficulty Auto-Adjust), Bug fixes + polish. |
-| **P4** | Focus Score enhancement (FD task data + AI hybrid), Pre-open friction, Category limits, App limit smart suggestions. |
-| **P4.FF** | IPC bridge additions for P4 cross-app features. Built after P4 features are individually stable. |
+| **P4** | Focus Score enhancement (FD task data + AI hybrid), Pre-open friction, Category limits, App limit smart suggestions, Multi-device sync (live session + app limits via Cloudflare D1, passive data via Drive dump). |
 | **P5** | Website, Windows, Linux, iOS, macOS. |
 
 ---
@@ -265,7 +272,7 @@ All code is generated via **Antigravity (ag)** — an AI coding agent. Ari direc
 - `FluxDone_PRD_v2.docx` — product requirements
 - `FluxDone_TRD_v2.docx` — technical requirements
 - `ui_SCR-01` through `ui_SCR-13` + `ui_ICONS_icon-system.md` — locked P1 UI specs
-- `FD_P2_AMENDMENT_wont-do-status.md` — P2 amendment
+- `FD_P2_AMENDMENT_wont-do-status.md`, `FD_P2_AMENDMENT_auto-google-drive-backup.md` — P2 amendments
 - `FD_P3_F1` through `FD_P3_F6` + widget specs — P3 specs
 - `FD_P4_F1` through `FD_P4_F6` — P4 specs
 
@@ -274,7 +281,7 @@ All code is generated via **Antigravity (ag)** — an AI coding agent. Ari direc
 - 10 FF P1 UI specification files
 - `FF_P2_F1` through `FF_P2_F5` — P2 specs
 - `FF_P3_F1` through `FF_P3_F5` — P3 specs
-- `FF_P4_F1` through `FF_P4_F4` — P4 specs
+- `FF_P4_F1` through `FF_P4_F5iii` — P4 specs (including multi-device sub-features)
 
 **Rule:** No deviation from spec documents without explicit approval from Ari.
 
@@ -284,9 +291,16 @@ All code is generated via **Antigravity (ag)** — an AI coding agent. Ari direc
 
 - **Spec-first, always.** All decisions locked before any code is written.
 - **Modular.** Every feature is a self-contained module. One broken module must not cascade.
-- **Offline-first.** Core functionality works with zero network. Network features are enhancements.
+- **Offline-first.** Core functionality works with zero network. Network features are enhancements only.
 - **Token-based theming.** All colors via ThemeTokens in FD. No hardcoded values.
 - **Clone first.** Phase 1 replicates the existing apps' workflows exactly.
 - **FD before FF.** Build and validate FluxDone completely before beginning FluxFoxus.
 - **IPC last.** The MethodChannel bridge is built after both apps are individually stable per phase.
-- **No online database.** All features use local SQLite/Hive. No server-side database at any phase.
+- **Minimal cloud footprint.** Cloud infrastructure is used only where local-only is insufficient (FF P4 multi-device uses Cloudflare D1 for live session sync — ~200 bytes per user, free tier only). No server-side databases for core features.
+
+---
+
+## Repo Notes
+
+- `prompts_docx/` should be gitignored — verify `.gitignore` is correctly excluding it
+- Loose files at repo root (`FluxDone_PRD_v2.txt`, `FluxDone_TRD_v2.txt`, `trd_utf8.txt`, `task.md`, `flutter`) should be cleaned up or moved to `prompts_docx/`
